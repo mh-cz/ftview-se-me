@@ -1,0 +1,659 @@
+MULTISTATE INDICATOR FOR RSVIEW32 — REVERSE ENGINEERING GUIDE (FINAL)
+=======================================================================
+Purpose: convert the "MultiState Indicator for RSView32" ActiveX control,
+as embedded in FactoryTalk View SE (Gfx-SE12) display XML, into the
+equivalent native <multistateIndicator> element in FactoryTalk View ME
+(Gfx-ME12) display XML.
+
+This document supersedes all earlier working notes. It keeps only
+conclusions, states plainly what is proven vs. assumed, and ends with a
+byte-by-byte map of the binary format. Where something was corrected
+partway through the investigation, only the corrected, final understanding
+is presented — the old wrong version has been dropped rather than kept
+for history.
+
+
+PART 1 — THE BIG PICTURE
+=========================
+
+The control
+-----------
+- Name shown in Studio: "MultiState Indicator for RSView32"
+- File: Multistate_Indicator.ocx
+- progId: Multistate_Indicator.ctl_MSIC
+- classId: {426E8EFA-89A5-4C43-8658-35A607F0075F}
+- It is a legacy RSView32-era ActiveX control, still usable in FactoryTalk
+  View SE displays but with no equivalent in FactoryTalk View ME (ME does
+  not support ActiveX). ME has its own NATIVE graphic object,
+  <multistateIndicator>, which is functionally similar and is the
+  conversion target.
+
+How it appears in SE's XML
+---------------------------
+    <activeX name="..." height="..." width="..." left="..." top="...">
+        <data progId="Multistate_Indicator.ctl_MSIC"
+              fileName="Multistate_Indicator.ocx"
+              fileVersion="..."
+              data="<BASE64 BLOB>"/>
+        <connections>
+            <connection name="u_States"        expression="{u_States_TAG}"/>
+            <connection name="Border"          expression="{border_TAG}"/>
+            <connection name="CurrentState"    expression="{CurrentState_TAG}"/>
+            <connection name="IndicatorTag"    expression="{Indicator_TAG}"/>
+            <connection name="StateAlignment"  expression="{StateAlignment_TAG}"/>
+            <connection name="StateBackColor"  expression="{StateBackColor_TAG}"/>
+            <connection name="StateCount"      expression="{StateCount_TAG}"/>
+            <connection name="StateFont"       expression="{StateFont_TAG}"/>
+            <connection name="StateFontColor"  expression="{StateFontColor_TAG}"/>
+            <connection name="StateIndValue"   expression="{StateIndVAlue_TAG}"/>
+            <connection name="StateText"       expression="{StateText_TAG}"/>
+        </connections>
+    </activeX>
+
+The single most important architectural fact, confirmed by direct test
+(editing a <connections> expression from a tag reference to a literal
+value produced a byte-for-byte IDENTICAL <data> blob):
+
+    >>> The <connections> block and the <data> blob are COMPLETELY
+    >>> SEPARATE. Tag bindings live only in the FactoryTalk runtime layer
+    >>> and are NEVER reflected in the binary blob. Only IndicatorTag
+    >>> (which one PLC tag drives the whole control) is useful to read
+    >>> from <connections> for conversion purposes — everything else
+    >>> (colors, fonts, state text, state count, alignment, etc.) has to
+    >>> come from decoding the <data> blob itself. <<<
+
+The <data> "data" attribute
+----------------------------
+This is a base64-encoded binary blob: the control's own OLE
+IPersistPropertyBag serialization (a private, undocumented format
+belonging to the OCX, not a Microsoft/RSView-public spec). This is the
+format that had to be reverse engineered byte-by-byte, and is the subject
+of Part 3 (the byte map) below.
+
+Studio's property editor for this control ("MultiState Indicator for
+RSView32 - vlastnosti") has 4 tabs: General (States list, per-state text,
+back color, Number of States, Indicator Border, State Font group with
+name/size/color/3x3 alignment grid), About, Common, and Connections (the
+11 tag-binding rows listed above). Everything on the General tab is what
+ends up in the binary blob; everything on the Connections tab does not.
+
+The conversion target: ME's native <multistateIndicator>
+-----------------------------------------------------------
+In ME, this is a first-class XML element defined directly by
+Gfx-ME12.xsd — a plain, human-readable, self-documenting format with NO
+binary blob, NO checksum, nothing opaque at all. Confirmed real example:
+
+    <multistateIndicator name="MultistateIndicator1" height="75" width="75"
+        left="590" top="195" visible="true" wallpaper="false"
+        isReferenceObject="false" backStyle="solid" borderStyle="raisedInset"
+        borderUsesBackColor="true" borderWidth="8" description=""
+        shape="rectangle" triggerType="value" currentStateId="0"
+        captionOnBorder="false" setLastStateId="4">
+        <states>
+            <state stateId="Error" backColor="navy" borderColor="navy"
+                   patternColor="white" patternStyle="none" blink="false"
+                   endColor="white" gradientStop="50"
+                   gradientDirection="gradientDirectionHorizontal"
+                   gradientShadingStyle="gradientHorizontalFromRight">
+                <caption fontFamily="Arial" fontSize="10" bold="false"
+                    italic="false" underline="false" strikethrough="false"
+                    caption="Error" color="white" backColor="navy"
+                    backStyle="transparent" alignment="middleCenter"
+                    wordWrap="true" blink="false"/>
+                <imageSettings imageName="" alignment="middleCenter"
+                    backStyle="transparent" color="white" backColor="navy"
+                    scaled="false" blink="false"/>
+            </state>
+            <state stateId="0" value="0" backColor="navy" ...>
+                <caption .../>
+                <imageSettings .../>
+            </state>
+            <!-- one <state> per configured value, plus the required
+                 "Error" state -->
+        </states>
+        <connections>
+            <connection name="Indicator" expression="{TAG_NAME}"/>
+        </connections>
+    </multistateIndicator>
+
+Key structural differences from the SE control, worth keeping in mind
+when converting:
+  - No <connections>-style tag-expression table with 11 rows; ME just has
+    one <connection name="Indicator" expression="{tag}"/> under a single
+    <connections> block, wired to the same PLC tag SE's IndicatorTag used.
+  - Each <state> carries its own <imageSettings> child (a per-state image)
+    — SE's control has no equivalent at all, since it only ever exposed
+    text/font/color per state, never a per-state image.
+  - "how many states" is implicit — it's just however many <state>
+    children exist — rather than a separately stored integer.
+  - Alignment is a named enum string (e.g. "middleCenter") instead of
+    SE's 0-8 grid integer.
+  - Font style (bold/italic/underline/strikethrough) is four independent
+    boolean attributes on <caption>, not one packed bitfield byte.
+  - Colors are plain strings: either a named color ("navy") or a raw
+    "#RRGGBB" hex string — both confirmed valid ME12 syntax for the
+    <state backColor="..."> attribute specifically.
+
+
+PART 2 — WHAT WE KNOW vs. WHAT WE'RE UNSURE ABOUT
+====================================================
+
+2A. FULLY CONFIRMED — safe to rely on for a real converter
+-------------------------------------------------------------
+
+  Blob header
+    - Second 4-byte field (offset 4) = total blob length in bytes.
+      Verified exact match against real decoded byte length across every
+      sample checked.
+
+  Entry framing
+    - The blob is a flat sequence of name/value entries with no top-level
+      entry count; the parser just walks until end-of-buffer.
+    - Each entry's own 4-byte length field IS INCLUSIVE of itself (i.e.
+      it is the length of the whole entry record, including those 4
+      bytes) — verified by walking a full 26-entry blob and landing
+      exactly on every next entry's length field, zero drift.
+    - Entry length is always rounded up to a multiple of 4: whenever the
+      entry's natural (name + value + trailer) length wouldn't land on a
+      4-byte boundary, exactly 2 zero padding bytes are inserted right
+      before the trailer. Verified across 4 independent font-entry
+      samples with different name/font-name lengths.
+    - Entry names are UTF-16LE, with NO explicit length prefix — the
+      parser infers where the name ends by recognizing where the
+      known value-format for that property begins. This means locating
+      entries by UTF-16LE substring search (e.g. searching for
+      "statefont-1".encode('utf-16-le')) is the practical, reliable way
+      to find a specific property, rather than parsing the blob from
+      byte 0 forward.
+    - StateText entries are an important naming exception: the entry's
+      NAME is just the bare state index as a string ("-1", "0", "1", ...),
+      with NO "statetext" prefix — unlike every other per-state property.
+
+  Property: statecount
+    - int32. Equals the "Number of States" dropdown value.
+    - IMPORTANT CAVEAT: because entry names have no explicit length
+      prefix, the generic name-reader greedily consumes UTF-16 code units
+      as long as they look "printable". If statecount's own numeric value
+      happens to have a first byte that decodes as a printable ASCII
+      character (e.g. value 100 = 0x64 0x00 00 00 in memory, and 0x0064
+      as a little-endian 16-bit unit reads as ASCII 'd'), the greedy
+      reader can swallow that into the name, producing the key
+      "statecountd" instead of "statecount". A direct dictionary lookup
+      for the literal key "statecount" can therefore silently miss.
+      The real converter works around this by scanning per-state property
+      SUFFIXES and bare numeric keys to discover which states exist,
+      rather than trusting a fixed name lookup for statecount.
+
+  Property: border (General tab "Indicator Border" dropdown)
+    - int32. Line = 2 = 2 is WRONG — corrected values: Line is the
+      DEFAULT and is OMITTED from the blob entirely when selected (no
+      "border" entry appears at all). Inset = 2 (directly observed
+      multiple times, byte-exact reproducible). No Border = 0 (inferred
+      from dropdown order + the default-omission convention; considered
+      solved via external cross-check, though this project never
+      decoded a byte-level "No Border" sample directly).
+
+  Property: statealignment{N} / statealignment-1 (3x3 alignment grid)
+    - int32 conceptually, value = row*3 + col (0-indexed, top-to-bottom,
+      left-to-right):
+          0=Top-Left     1=Top-Center     2=Top-Right
+          3=Mid-Left     4=Mid-Center     5=Mid-Right
+          6=Bottom-Left  7=Bottom-Center  8=Bottom-Right
+    - Center (4) is the DEFAULT and is OMITTED from the blob when
+      selected.
+    - CONFIRMED STRUCTURAL RULE: the numbered states (statealignment0
+      through statealignment3, and by extension any numbered state) use a
+      2-byte LE value; statealignment-1 (StateError) uses a 4-byte LE
+      value. This was verified across three different statealignment-1
+      values (0, 1, 5) and two different numbered-state samples (value 0
+      at index 0, value 8 at index 2) — a genuine, value-independent
+      structural difference, not a coincidence.
+    - All 9 grid positions are considered solved (2 directly observed
+      firsthand in this project's own samples: Top-Left=0, Mid-Right=5,
+      Top-Center=1; the remaining values follow directly from the
+      row*3+col formula and were cross-checked externally).
+
+  Property: currentstate
+    - int16 (NOT int32). Tracks which row is highlighted in the States
+      list at save time.
+    - Follows the same "index 0 is default, omitted when selected"
+      convention: StateError selected -> value -1; State1 selected ->
+      value 1; State0 selected -> entry omitted entirely.
+    - Not related to the <connections> "CurrentState" tag binding (see
+      the architectural finding in Part 1 — connections never touch the
+      blob).
+
+  Property: statefontcolor{N} / statefontcolor-1
+  Property: statebackcolor{N} / statebackcolor-1
+    - int32, OLE_COLOR encoding: 0x00BBGGRR (standard Windows/VB color
+      format — NOT plain 0x00RRGGBB).
+    - If the high bit (0x80000000) is set, this is a SYSTEM COLOR
+      SENTINEL, not an explicit RGB value: the low byte is a standard
+      Windows system color index (e.g. 0x12 = COLOR_BTNTEXT/BTNFACE-family
+      button text, 0x0F = COLOR_BTNFACE/COLOR_3DFACE button-face gray).
+      This is what a state's color looks like when it was NEVER manually
+      touched in the color picker — it's an "inherit the system/theme
+      default" flag, not a real stored color. CONFIRM before treating any
+      single decoded value as ground truth: cross-check against what
+      Studio's own property panel actually displays, since this project
+      did once find a genuinely conflicting reading between two different
+      parsing passes over the same real file (see 2C below) before
+      resolving it.
+    - Verified directly against ground-truth RGB edits made in Studio
+      (state back/font colors set to specific RGB() values, then
+      confirmed byte-for-byte matching in the decoded blob) — this is the
+      most rigorously tested property in the whole format.
+
+  Property: statetext{N} / statetext-1 (bare numeric name, see naming
+  quirk above)
+    - String type: [4-byte LE char count][UTF-16LE string of that many
+      characters]. Length is NOT a byte count — multiply by 2 for the
+      actual UTF-16LE byte length.
+    - This is the per-state VALUE + CAPTION we actually need for
+      conversion. In practice, for a real production control, the
+      pattern that reliably finds a state's trigger-value string and its
+      caption together is: a short 1-3 digit UTF-16LE numeric string
+      (the trigger value) IMMEDIATELY followed by [4-byte length][UTF-16LE
+      caption text]. This positional pattern — not a named
+      "statetext{N}"-style key — is what the working converter actually
+      scans for, because production controls with 100 reserved state
+      slots do not serialize a separate named entry for every slot; only
+      the states that were actually given real content produce a
+      findable value+caption pair this way.
+    - Verified end-to-end against a real 7-state production object: the
+      scan found exactly the right 7 (value, caption) pairs with zero
+      false positives, matching Studio's own property panel exactly.
+
+  Property: statefont{N} / statefont-1 — IFont/StdFont structure
+    - Starts with the standard, public, well-known OLE CLSID_StdFont GUID:
+      03 52 e3 0b 91 8f ce 11 9d e3 00 aa 00 4b b8 51
+      ({0BE35203-8F91-11CE-9DE3-00AA004BB851}) — this is generic OLE font
+      marshaling, not anything specific to this control.
+    - Full verified layout after the GUID (see Part 3 for the byte map).
+    - Font size: 4-byte LE uint32, POINTS x 10000 (e.g. 82500 = 8.25pt).
+      Verified exactly against a distinctive 48pt test case (480000/10000
+      = 48.0) and an 8.25pt case (82500/10000 = 8.25).
+    - Font weight: 2-byte LE uint16, standard Windows GDI constants:
+      400 = Normal (FW_NORMAL), 700 = Bold (FW_BOLD), 900 = Black
+      (FW_BLACK). 400 and 700 are both firmly verified against isolated,
+      controlled test edits. 900 is verified but with one caveat: the
+      only sample available also changed the font family name itself (to
+      "Arial Black"), so it is not 100% certain the "900" value is
+      independent of the "...Black" font-name family vs. being tied
+      specifically to it — treat 900 = Black as very likely correct, but
+      slightly less rigorously isolated than 400/700.
+    - Style flags: 1 byte, a true bitfield, flags combine with plain
+      bitwise OR (verified with a real combined 0x0C = underline +
+      strikethrough test, and separately with bold+italic combined):
+          0x02 = Italic
+          0x04 = Underline
+          0x08 = Strikethrough
+      (0x01 is untested and has no evidence of being used by this
+      control; bold/weight lives in the separate weight field above, not
+      in this byte.)
+    - Font name: 1-byte length prefix (character count) + that many raw
+      ASCII bytes — NOT UTF-16LE, unlike every other string in this
+      format. Verified with both "Arial" (5) and "Bahnschrift Condensed"
+      (21).
+
+  Architectural: <connections> vs. <data> blob independence
+    - Confirmed by direct test: changing a <connections> expression
+      (including StateIndValue, changed from a tag reference to a literal
+      value) produces a byte-for-byte IDENTICAL blob. Tag bindings are
+      resolved entirely by the FactoryTalk runtime and never touch the
+      OCX's own serialized property bag.
+
+
+2B. PARTIALLY CONFIRMED / PLAUSIBLE BUT NOT FULLY ISOLATED
+---------------------------------------------------------------
+
+  - Font weight 900 = Black: plausible and internally consistent with
+    the GDI constant, but the one sample that shows it also changed the
+    font family name simultaneously, so it isn't proven independent of
+    that. Would need a same-family, weight-only-changed sample (if the
+    property editor even exposes such a control) to fully isolate.
+  - "Padding is always zero" for the 2-byte gaps seen in
+    statefontcolorN/statebackcolorN and in currentstate: zero in every
+    case tested so far, including with a genuine explicit custom color
+    (not just an unset system-color sentinel) — but "zero in every case
+    tested" isn't the same as a proof it's always zero. Current best
+    explanation is that this is just the generic entry-length-rounds-to-
+    multiple-of-4 padding rule (see 2A "Entry framing"), which fits every
+    observation cleanly, but this unification was never independently
+    re-verified byte-by-byte for these two specific property types after
+    the padding rule was discovered elsewhere.
+  - border = 0 (No Border): the value itself is considered correct
+    (cross-checked externally / by the user), but no byte-level "No
+    Border" sample was ever directly decoded and inspected firsthand in
+    this project.
+
+
+2C. KNOWN PITFALL — do not repeat this mistake
+--------------------------------------------------
+During this project, two different parsing approaches were run against
+the SAME real production blob and produced CONTRADICTORY per-state color
+results: one reported every state (0 through 99) sharing one identical
+deep-blue/white color pair, while Studio's own property panel (ground
+truth) showed distinct navy-back/black-font colors for the real states.
+The root cause was that per-state color/font entries are in practice only
+ever serialized for state "-1" and state "0" — NOT for every individual
+numbered state — so any code that expects a named
+"statebackcolorN"/"statefontcolorN" entry for every state and falls back
+to some default when it's missing needs that fallback to be "inherit
+state 0's (or failing that, -1's) color", not "assume the entry always
+exists" or "silently substitute a hardcoded literal color". A real bug
+of exactly this shape (falling back to a hardcoded "navy" literal instead
+of state 0's real resolved color) was found and fixed in the working
+converter — see the CURRENT WORKING CONVERTER note at the end of this
+document.
+
+Lesson: whenever a decode disagrees with what Studio's own UI shows for
+the same object, TRUST STUDIO'S UI and re-derive the byte-level rule —
+don't assume the newer or more "structured-looking" parse is automatically
+correct.
+
+
+2D. UNRESOLVED — genuinely open, not needed for a working converter
+------------------------------------------------------------------------
+
+These remain unsolved. None of them block converting a real display
+(the working converter sidesteps all of them), but they're listed here in
+case someone wants the format fully, academically understood:
+
+  1. stateindvalue-1: an entry that exists in EVERY sample, always an
+     8-byte all-zero payload, never varies regardless of anything else
+     changed (including explicit <connections> literal overrides).
+     No entries named stateindvalue0/1/2/3 have ever been observed.
+     Leading theories (untested): reserved/always-zero legacy field, or a
+     VARIANT-typed empty placeholder. Does not matter for conversion,
+     since real per-state trigger values are read via the
+     value-string-immediately-before-caption pattern (see 2A, statetext),
+     not via this field.
+  2. The very first 4-byte field at blob offset 0 (before the
+     length-at-offset-4 field): not the blob length, not yet explained,
+     no relationship found to entry count or anything else checked.
+  3. The 4-byte "checksum" trailer on every entry: algorithm not
+     identified (not confirmed to be CRC32 or any standard algorithm).
+     Evidence suggests it may NOT be a pure function of that entry's own
+     name+value — in one test, inserting a new entry elsewhere in the
+     blob changed an unrelated, unmodified entry's trailer bytes further
+     along, which rules out "hash of this entry alone" as an explanation.
+     Possibly a running/cumulative value across the whole blob, or a
+     position-dependent value. Not resolved.
+  4. The 2-byte "tag1"/"tag2" fields on every entry: rough patterns
+     noticed (e.g. strings commonly show tag1=0x0003) but never
+     systematically cataloged into a full type-tag table.
+  5. Whether the "no separately touched -> inherit from state 0/-1"
+     behavior for colors/fonts is itself the intended DESIGN of the
+     control, or an artifact of how Studio's editor happens to only write
+     entries for states you've actually clicked on in the General tab.
+     Doesn't change what a converter should do (use the fallback chain
+     either way), just an open question about why.
+
+
+PART 3 — BYTE MAP
+===================
+
+3A. Overall blob layout
+-------------------------
+
+    Offset  Size   Field
+    ------  -----  -----------------------------------------------------
+    0       4      Unexplained leading marker (open item 2D.2)
+    4       4      Total blob length in bytes (LE uint32) — matches the
+                    real decoded length exactly, always
+    8       8      Fixed leader bytes seen before the first real entry
+                    (e.g. "03 00 08 00" + 4 more bytes) — structurally
+                    resembles the trailer of a normal entry, possibly a
+                    seed/previous-checksum slot
+    16      ...    First property entry begins here
+    ...     ...    Flat sequence of property entries, one after another,
+                    no gaps, no top-level count — walk until end of blob
+
+
+3B. Generic property entry layout
+-------------------------------------
+
+    Offset (from     Size   Field
+    entry start)
+    ---------------  -----  --------------------------------------------
+    0                4      entry_len (LE uint32) — INCLUSIVE of these
+                             4 bytes; the next entry starts at
+                             (this entry's start) + entry_len
+    4                var    Property name, UTF-16LE, NO length prefix
+                             (name ends where the recognizable start of
+                             that property's value format begins)
+    (name end)       var    Value payload — format depends on property
+                             type, see 3C/3D/3E below
+    (value end)      0-2    Zero padding, ONLY if needed to round
+                             entry_len up to a multiple of 4
+    (padding end)    2      tag1 (meaning not fully catalogued)
+    +2               2      tag2 (meaning not fully catalogued)
+    +2               4      4-byte trailer ("checksum") — algorithm
+                             unknown, may depend on more than just this
+                             entry's own bytes (see 2D.3)
+
+Note: for STRING-TYPE entries specifically (StateText, and any other
+string-valued property), the value payload itself embeds its own extra
+length prefix — see 3D below — that is a SEPARATE thing from the outer
+entry_len field.
+
+
+3C. Simple scalar property value formats
+--------------------------------------------
+
+  int32 properties (statecount, border, statealignment-1, most
+  statefontcolor{N}/statebackcolor{N} at "-1"):
+      [4 bytes LE signed/unsigned int32]
+
+  int16 properties (currentstate, statealignment{N} for numbered
+  states 0..N):
+      [2 bytes LE int16]
+      (Note: statealignment-1 specifically uses the 4-byte form above,
+      not this one — same property, different width depending on
+      whether it's the "-1"/Error state or a numbered state.)
+
+  OLE_COLOR properties (statefontcolor{N}/statefontcolor-1,
+  statebackcolor{N}/statebackcolor-1):
+      [4 bytes LE uint32], format 0x00BBGGRR:
+          bits 0-7   = Red
+          bits 8-15  = Green
+          bits 16-23 = Blue
+          bit 31 set = SYSTEM COLOR SENTINEL — ignore bits 0-23, read
+                       bits 0-7 (the low byte) as a Windows system color
+                       index instead (e.g. 0x0F=BTNFACE, 0x12=BTNTEXT)
+      May be followed by 2 extra bytes before tag1/tag2 in the numbered-
+      state (0..N) variant — believed to just be the generic 4-byte
+      padding-alignment rule (3A), not a separate meaningful field.
+
+
+3D. String property value format
+-------------------------------------
+
+Applies to StateText entries (name = bare state index, e.g. "-1", "0")
+and any other string-valued property:
+
+      [4 bytes LE uint32]  character count, call it N (NOT byte count)
+      [N x 2 bytes]        the string itself, UTF-16LE
+
+  Practical pattern for finding a real configured state's trigger value
+  + caption together (used by the working converter instead of relying
+  on named per-state keys, since production files don't serialize a
+  named entry per state past 0):
+
+      [2/4/6 bytes] short numeric string, UTF-16LE, 1-3 ASCII digits
+                    (this is the state's trigger VALUE, as text)
+      [4 bytes]     char count of the caption string that follows
+      [N x 2 bytes] the caption text, UTF-16LE
+
+  Example (value "111", caption not shown here but follows the same
+  shape immediately after):
+      18 00 00 00                  entry_len = 24
+      "0"  (name; bare state index, 2 bytes UTF-16LE)
+      03 00 00 00                  value char count = 3
+      "111" (6 bytes UTF-16LE)     <- the trigger value, as a string
+      03 00                        tag1
+      0f 00                        tag2
+      66 f0 d9 ca                  checksum (unexplained)
+
+
+3E. IFont / StdFont structure (statefont{N} / statefont-1)
+----------------------------------------------------------------
+
+Full layout, all fields confirmed except where marked:
+
+    Offset   Size   Field
+    -------  -----  ------------------------------------------------------
+    0        16     CLSID_StdFont GUID (public OLE constant, always
+                     exactly: 03 52 e3 0b 91 8f ce 11 9d e3 00 aa 00 4b
+                     b8 51)
+    16       1      Version byte — always 0x01 in every sample
+    17       2      Constant bytes "ee 00" — meaning not resolved, never
+                     seen to vary
+    19       1      STYLE FLAGS bitfield:
+                       0x00 = Regular/none
+                       0x02 = Italic
+                       0x04 = Underline
+                       0x08 = Strikethrough
+                     (flags combine with bitwise OR, e.g. 0x0C =
+                     underline+strikethrough; verified combined)
+    20       2      WEIGHT, LE uint16: 400=Normal, 700=Bold, 900=Black
+                     (400/700 firmly verified; 900 plausible, see 2B)
+    22       2      Constant bytes "44 42" — meaning not resolved
+                     (possibly charset/pitch-and-family flags), never
+                     seen to vary across any sample, including size and
+                     weight changes
+    24       1      Font name length, N (byte count, plain ASCII char
+                     count)
+    25       N      Font name, plain ASCII (NOT UTF-16LE — the one
+                     exception to this format's usual string encoding)
+    25+N     0-2    Zero padding, only if needed to round the overall
+                     entry_len up to a multiple of 4
+    (end)    2      tag1
+    +2       2      tag2
+    +2       4      checksum trailer (unexplained, see 2D.3)
+
+IMPORTANT — earlier drafts of this investigation put the font SIZE field
+at offset 20 (right after the style-flag byte) as a 4-byte points x 10000
+value, with weight coming later. That was WRONG and has been corrected:
+weight (2 bytes) comes first at offset 20, and size (4 bytes, points x
+10000) was verified separately to occupy a DIFFERENT position once a
+sample with both a distinctive weight AND a distinctive size was
+decoded side-by-side. If re-deriving this from scratch, re-verify the
+exact offset of the 4-byte size field against two controlled samples
+that differ ONLY in point size (nothing else) before trusting either
+this document's numbers or any prior draft's — the field ordering in
+this struct was the single most error-prone part of the whole
+investigation and was gotten wrong at least once before landing on the
+layout above.
+
+Worked examples:
+
+  statefont-1 (StateError) — Arial, 8.25pt, Regular:
+      03 52 e3 0b 91 8f ce 11 9d e3 00 aa 00 4b b8 51   GUID
+      01                                                 version
+      ee 00                                              constant
+      00                                                 style = Regular
+      90 01                                              weight = 400 LE
+      44 42                                              constant
+      01 00                                              constant (?)
+      05                                                 namelen = 5
+      41 72 69 61 6c                                    "Arial"
+
+  statefont0 (State0) — Arial, 8.25pt, Underline:
+      03 52 e3 0b 91 8f ce 11 9d e3 00 aa 00 4b b8 51   GUID
+      01                                                 version
+      ee 00                                              constant
+      04                                                 style = Underline
+      90 01                                              weight = 400 LE
+      44 42 01 00                                        constant
+      05                                                 namelen = 5
+      41 72 69 61 6c                                    "Arial"
+
+  statefont0 (State0) — Arial, 48pt, Regular (isolates the size field):
+      ... same GUID/version/constant/style/weight as above (400, Regular)
+      00 53 07 00     <- size = 480000 / 10000 = 48.0pt (LE uint32)
+      05
+      41 72 69 61 6c  "Arial"
+
+
+PART 4 — SE12 -> ME12 ATTRIBUTE MAPPING
+==========================================
+
+    SE12 blob property              ME12 XML location
+    -------------------------------  ------------------------------------
+    statecount                       implicit: just count the <state>
+                                      children
+    border                           container's borderStyle/borderWidth
+                                      (ME's enum is richer than SE12's
+                                      3-value dropdown; don't assume a
+                                      1:1 value mapping, pick a sane ME
+                                      style like "raisedInset")
+    currentstate                     container's currentStateId
+    per-state trigger value + text   <state stateId="{i}" value="{N}">
+    (see 3D pattern)                   <caption caption="{text}">
+    statefontcolor{N} / -1           <caption color="..."> (named color
+                                      or "#RRGGBB" hex string)
+    statebackcolor{N} / -1           <state backColor="..."> — falls back
+                                      to state 0's (or -1's) color when no
+                                      distinct entry exists for that state
+                                      (see Part 2C pitfall)
+    statefont{N} name/size            <caption fontFamily="..."
+                                        fontSize="..."> (ME writes plain
+                                      point size, no x10000 scaling)
+    statefont{N} style bits           <caption bold="" italic=""
+                                        underline="" strikethrough="">
+                                      (4 separate ME booleans; weight>=700
+                                      -> bold="true")
+    statealignment{N} / -1            <caption alignment="..."> (named
+                                      enum string, e.g. row*3+col=4 ->
+                                      "middleCenter")
+    IndicatorTag (from <connections>, (single <connection
+      NOT the blob)                    name="Indicator"
+                                        expression="{tag}"/> under ME's
+                                      own <connections> block)
+    (no SE12 equivalent)              <imageSettings> per state — ME-only,
+                                      nothing to map from; use safe
+                                      defaults (empty imageName, etc.)
+
+Notes on this mapping:
+  - ME's <state backColor="..."> attribute confirmed to accept raw
+    "#RRGGBB" hex strings directly, not just named colors — useful since
+    SE12 colors decode as raw RGB triples or system-color indices that
+    may not have a matching named-color equivalent.
+  - ME's alignment enum: at least "middleCenter" and "bottomRight" are
+    directly confirmed values; the remaining 7 grid positions
+    (topLeft, topCenter, topRight, middleLeft, middleRight, bottomLeft,
+    bottomCenter) are inferred by naming convention (assuming ME mirrors
+    the same 3x3 grid SE12 uses) but not all individually observed in a
+    sample.
+  - A required "Error" state must be added on the ME side even though it
+    maps from SE12's "-1"/StateError state, since ME's schema requires a
+    state with stateId="Error" to be present.
+
+
+CURRENT WORKING CONVERTER
+============================
+A working C# converter (FTViewConverter.cs) implements this mapping. It:
+  - Parses the blob using the corrected entry_len-inclusive framing
+    (Part 3B) and a resilient entry-name reader that tolerates the
+    "statecount" vs "statecountd" ambiguity (Part 2A) by discovering
+    state IDs from property-name suffixes and bare-numeric keys rather
+    than fixed lookups.
+  - Extracts each state's trigger value + caption via the positional
+    pattern in Part 3D (works even though most of the 100 reserved state
+    slots have no named entry at all).
+  - Decodes colors per Part 3C, including resolving system-color
+    sentinels (e.g. COLOR_BTNFACE) to their real standard Windows RGB
+    values rather than discarding them — this was a real, found-and-fixed
+    bug (see Part 2C).
+  - Falls back to state 0's (then state -1's) color/font when a
+    numbered state has no color/font entry of its own, rather than
+    silently substituting a hardcoded literal — this was also a real,
+    found-and-fixed bug (see Part 2C).
+  - Has NOT been compile-tested in a real .NET environment as part of
+    this documentation effort (no .NET runtime was available); it has
+    been checked for structural correctness and had its core algorithm
+    independently re-verified in Python against real captured blobs, but
+    always rebuild and test against a real display before trusting it
+    on production files.

@@ -1,0 +1,32 @@
+{
+  "FixedFileInfo": {
+    "FileVersion": {
+      "Major": 1,
+      "Minor": 0,
+      "Patch": 0,
+      "Build": 0
+    },
+    "ProductVersion": {
+      "Major": 1,
+      "Minor": 0,
+      "Patch": 0,
+      "Build": 0
+    }
+  },
+  "StringFileInfo": {
+    "Comments": "",
+    "CompanyName": "Author: Matěj Hula DiS.",
+    "FileDescription": "FactoryTalk View XML konverter SE do ME",
+    "FileVersion": "1.0.0.0",
+    "InternalName": "",
+    "LegalCopyright": "",
+    "LegalTrademarks": "",
+    "OriginalFilename": "",
+    "PrivateBuild": "",
+    "ProductName": "",
+    "ProductVersion": "1.0.0.0",
+    "SpecialBuild": ""
+  },
+  "IconPath": "app.ico",
+  "ManifestPath": "app.manifest"
+}

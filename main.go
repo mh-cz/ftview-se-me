@@ -69,7 +69,7 @@ type GUI struct {
 func main() {
 	gui := &GUI{}
 	if err := gui.run(); err != nil {
-		walk.MsgBox(nil, "Chyba", err.Error(), walk.MsgBoxIconError)
+		walk.MsgBox(nil, "Error", err.Error(), walk.MsgBoxIconError)
 		os.Exit(1)
 	}
 }
@@ -77,7 +77,7 @@ func main() {
 func (g *GUI) run() error {
 	if err := (MainWindow{
 		AssignTo: &g.mainWin,
-		Title:    "FactoryTalk View XML konverter SE do ME",
+		Title:    "FactoryTalk View XML Converter SE to ME",
 		MinSize:  Size{Width: 400, Height: 200},
 		Size:     Size{Width: 600, Height: 300},
 		Layout:   VBox{Margins: Margins{Left: 6, Top: 4, Right: 6, Bottom: 4}, Spacing: 4},
@@ -87,14 +87,14 @@ func (g *GUI) run() error {
 				MaxSize: Size{Width: 0, Height: 54},
 				Children: []Widget{
 					Label{
-						Text:    "FTView XML konverter",
+						Text:    "FTView XML Converter",
 						Font:    Font{PointSize: 16, Bold: true},
 						MaxSize: Size{Width: 0, Height: 0},
 					},
 					HSpacer{},
 					/*PushButton{
 						AssignTo: &g.btnMeToSe,
-						Text:     "Konvertovat\r\nME -> SE",
+						Text:     "Convert\r\nME -> SE",
 						MinSize:  Size{Width: 160, Height: 50},
 						OnClicked: func() {
 							go g.processFilesAsync(ftviewconverter.MeToSe)
@@ -102,7 +102,7 @@ func (g *GUI) run() error {
 					},*/
 					PushButton{
 						AssignTo:      &g.btnSeToMe,
-						Text:          "Konvertovat\r\nSE -> ME",
+						Text:          "Convert\r\nSE -> ME",
 						MinSize:       Size{Width: 100, Height: 50},
 						MaxSize:       Size{Width: 100, Height: 50},
 						StretchFactor: 0,
@@ -112,7 +112,7 @@ func (g *GUI) run() error {
 					},
 					PushButton{
 						AssignTo:      &g.btnBatchImportCreator,
-						Text:          "Vytvořit\r\nBatchImport.xml",
+						Text:          "Create\r\nBatchImport.xml",
 						MinSize:       Size{Width: 100, Height: 50},
 						MaxSize:       Size{Width: 100, Height: 50},
 						StretchFactor: 0,
@@ -228,7 +228,7 @@ func (g *GUI) processFilesAsync(targetDirection ftviewconverter.Direction) {
 		return
 	}
 
-	g.setLog(fmt.Sprintf("Zahajování konverze do %s (%s -> %s)...\n", targetEd, sourceEd, targetEd))
+	g.setLog(fmt.Sprintf("Starting conversion to %s (%s -> %s)...\n", targetEd, sourceEd, targetEd))
 
 	// Do the actual conversion work off the UI goroutine (this func
 	// already runs on a background goroutine via `go` in run(), mirroring
@@ -280,25 +280,25 @@ func (g *GUI) processFilesAsync(targetDirection ftviewconverter.Direction) {
 	order := make([]string, 0, len(results))
 
 	for _, result := range results {
-		g.log("Konvertování %s do %s\n", result.FileName, targetEd)
+		g.log("Converting %s to %s\n", result.FileName, targetEd)
 
 		if result.Err != nil {
-			g.log("Chyba u %s - %s\n", result.FileName, result.Err.Error())
+			g.log("Error with %s - %s\n", result.FileName, result.Err.Error())
 			continue
 		}
 
 		if result.Dropped {
-			g.log("[X] %s není platný ME/SE soubor. Zahazuji...\n", result.FileName)
+			g.log("[X] %s is not a valid ME/SE file. Discarding...\n", result.FileName)
 			continue
 		}
 
 		if result.Skipped {
-			g.log("%s už je v edici %s. Přeskakuji...\n", result.FileName, targetEd)
+			g.log("%s is already in %s edition. Skipping...\n", result.FileName, targetEd)
 		} else {
 			for _, warning := range result.Warnings {
 				g.log("[!] %s\n", warning)
 			}
-			g.log("%s konvertováno do %s\n", result.FileName, targetEd)
+			g.log("%s converted to %s\n", result.FileName, targetEd)
 		}
 
 		if result.OutputText != "" {
@@ -312,8 +312,8 @@ func (g *GUI) processFilesAsync(targetDirection ftviewconverter.Direction) {
 	}
 
 	batchChoice := g.askYesNo(
-		"Vytvořit Batch Import?",
-		"Chcete vytvořit BatchImport.xml pro tyto soubory?\nSoubory budou uloženy do nové podsložky.",
+		"Create Batch Import?",
+		"Do you want to create BatchImport.xml for these files?\nThe files will be saved into a new subfolder.",
 	)
 	createBatchImport := batchChoice == YesNoChoiceYes
 
@@ -325,13 +325,13 @@ func (g *GUI) processFilesAsync(targetDirection ftviewconverter.Direction) {
 
 	if createBatchImport {
 		stamp := time.Now().Format("2006_01_02_15_04_05")
-		folderName := fmt.Sprintf("%s_do_%s_%s", sourceEd, targetEd, stamp)
+		folderName := fmt.Sprintf("%s_to_%s_%s", sourceEd, targetEd, stamp)
 		saveDir = filepath.Join(saveDir, folderName)
 		if err := os.MkdirAll(saveDir, 0o755); err != nil {
-			g.log("Chyba při vytváření složky: %s - %s\n", saveDir, err.Error())
+			g.log("Error creating folder: %s - %s\n", saveDir, err.Error())
 			return
 		}
-		g.log("Vytvořena složka: %s\n", saveDir)
+		g.log("Folder created: %s\n", saveDir)
 	}
 
 	overwriteAll := false
@@ -351,7 +351,7 @@ func (g *GUI) processFilesAsync(targetDirection ftviewconverter.Direction) {
 				case OverwriteChoiceOverwriteAll:
 					overwriteAll = true
 				case OverwriteChoiceSkip:
-					g.log("Přeskočeno: %s (Soubor již existuje)\n", fileName)
+					g.log("Skipped: %s (File already exists)\n", fileName)
 					continue
 				case OverwriteChoiceKeepBoth:
 					outPath = makeTimestampedPath(outPath)
@@ -363,19 +363,19 @@ func (g *GUI) processFilesAsync(targetDirection ftviewconverter.Direction) {
 		}
 
 		if err := os.WriteFile(outPath, []byte(outputText), 0o644); err != nil {
-			g.log("Chyba ukládání: %s - %s\n", outPath, err.Error())
+			g.log("Save error: %s - %s\n", outPath, err.Error())
 			continue
 		}
-		g.log("Uloženo: %s\n", outPath)
+		g.log("Saved: %s\n", outPath)
 		savedFileNames = append(savedFileNames, filepath.Base(outPath))
 	}
 
 	if createBatchImport && len(savedFileNames) > 0 {
 		batchImportPath := filepath.Join(saveDir, "BatchImport.xml")
 		if err := writeBatchImportXml(batchImportPath, savedFileNames); err != nil {
-			g.log("Chyba při vytváření BatchImport.xml - %s\n", err.Error())
+			g.log("Error creating BatchImport.xml - %s\n", err.Error())
 		} else {
-			g.log("Vytvořen BatchImport.xml: %s\n", batchImportPath)
+			g.log("BatchImport.xml created: %s\n", batchImportPath)
 		}
 	}
 }
@@ -401,12 +401,12 @@ func (g *GUI) createBatchImportOnlyAsync() {
 		g.setButtonsEnabled(true)
 	}()
 
-	files := g.getFilesFromDialog("", "Vyberte soubory pro BatchImport.xml")
+	files := g.getFilesFromDialog("", "Select files for BatchImport.xml")
 	if len(files) == 0 {
 		return
 	}
 
-	g.setLog("Vytváření BatchImport.xml...\n")
+	g.setLog("Creating BatchImport.xml...\n")
 
 	// Group selected files by directory, since BatchImport.xml must live
 	// alongside the files it references and only lists plain filenames.
@@ -428,7 +428,7 @@ func (g *GUI) createBatchImportOnlyAsync() {
 			choice := g.askOverwrite("BatchImport.xml")
 			switch choice {
 			case OverwriteChoiceSkip:
-				g.log("Přeskočeno: %s (Soubor již existuje)\n", batchImportPath)
+				g.log("Skipped: %s (File already exists)\n", batchImportPath)
 				continue
 			case OverwriteChoiceKeepBoth, OverwriteChoiceKeepBothAll:
 				batchImportPath = makeTimestampedPath(batchImportPath)
@@ -437,9 +437,9 @@ func (g *GUI) createBatchImportOnlyAsync() {
 		}
 
 		if err := writeBatchImportXml(batchImportPath, fileNames); err != nil {
-			g.log("Chyba při vytváření BatchImport.xml - %s\n", err.Error())
+			g.log("Error creating BatchImport.xml - %s\n", err.Error())
 		} else {
-			g.log("Vytvořen BatchImport.xml: %s\n", batchImportPath)
+			g.log("BatchImport.xml created: %s\n", batchImportPath)
 		}
 	}
 }
@@ -453,7 +453,7 @@ func (g *GUI) createBatchImportOnlyAsync() {
 // ---------------------------------------------------------------------
 
 // askOverwrite mirrors AskOverwriteAsync. Button order matches the C#
-// buttons array: [Přeskočit, Ponechat, Ponechat vše, Přepsat, Přepsat vše].
+// buttons array: [Skip, Keep, Keep All, Overwrite, Overwrite All].
 func (g *GUI) askOverwrite(fileName string) OverwriteChoice {
 	resultCh := make(chan OverwriteChoice, 1)
 
@@ -463,47 +463,47 @@ func (g *GUI) askOverwrite(fileName string) OverwriteChoice {
 
 		_ = Dialog{
 			AssignTo: &dlg,
-			Title:    "Soubor již existuje",
+			Title:    "File Already Exists",
 			MinSize:  Size{Width: 420, Height: 160},
 			Layout:   VBox{},
 			Children: []Widget{
 				Label{
-					Text: fmt.Sprintf("Soubor '%s' již v cílové složce existuje.\nChcete jej přepsat?", fileName),
+					Text: fmt.Sprintf("File '%s' already exists in the target folder.\nDo you want to overwrite it?", fileName),
 				},
 				Composite{
 					Layout: HBox{},
 					Children: []Widget{
 						HSpacer{},
 						PushButton{
-							Text: "Přeskočit",
+							Text: "Skip",
 							OnClicked: func() {
 								choice = OverwriteChoiceSkip
 								dlg.Accept()
 							},
 						},
 						PushButton{
-							Text: "Ponechat",
+							Text: "Keep",
 							OnClicked: func() {
 								choice = OverwriteChoiceKeepBoth
 								dlg.Accept()
 							},
 						},
 						PushButton{
-							Text: "Ponechat vše",
+							Text: "Keep All",
 							OnClicked: func() {
 								choice = OverwriteChoiceKeepBothAll
 								dlg.Accept()
 							},
 						},
 						PushButton{
-							Text: "Přepsat",
+							Text: "Overwrite",
 							OnClicked: func() {
 								choice = OverwriteChoiceOverwrite
 								dlg.Accept()
 							},
 						},
 						PushButton{
-							Text: "Přepsat vše",
+							Text: "Overwrite All",
 							OnClicked: func() {
 								choice = OverwriteChoiceOverwriteAll
 								dlg.Accept()
@@ -522,7 +522,7 @@ func (g *GUI) askOverwrite(fileName string) OverwriteChoice {
 }
 
 // askYesNo mirrors AskYesNoAsync. Button order matches the C# buttons
-// array: [Ano, Ne].
+// array: [Yes, No].
 func (g *GUI) askYesNo(title, message string) YesNoChoice {
 	resultCh := make(chan YesNoChoice, 1)
 
@@ -542,14 +542,14 @@ func (g *GUI) askYesNo(title, message string) YesNoChoice {
 					Children: []Widget{
 						HSpacer{},
 						PushButton{
-							Text: "Ano",
+							Text: "Yes",
 							OnClicked: func() {
 								choice = YesNoChoiceYes
 								dlg.Accept()
 							},
 						},
 						PushButton{
-							Text: "Ne",
+							Text: "No",
 							OnClicked: func() {
 								choice = YesNoChoiceNo
 								dlg.Accept()
@@ -574,13 +574,13 @@ func (g *GUI) getFilesFromDialog(targetEd, titleOverride string) []string {
 
 	title := titleOverride
 	if title == "" {
-		title = fmt.Sprintf("Vyberte soubory pro konverzi do %s", targetEd)
+		title = fmt.Sprintf("Select files to convert to %s", targetEd)
 	}
 
 	g.mainWin.Synchronize(func() {
 		dlg := new(walk.FileDialog)
 		dlg.Title = title
-		dlg.Filter = "Soubory XML (*.xml)|*.xml"
+		dlg.Filter = "XML files (*.xml)|*.xml"
 		if g.lastLoadDir != "" {
 			dlg.InitialDirPath = g.lastLoadDir
 		}
@@ -605,7 +605,7 @@ func (g *GUI) getDirFromDialog(targetEd string) string {
 
 	g.mainWin.Synchronize(func() {
 		dlg := new(walk.FileDialog)
-		dlg.Title = fmt.Sprintf("Vyberte složku pro uložení souborů %s", targetEd)
+		dlg.Title = fmt.Sprintf("Select a folder to save %s files", targetEd)
 		if g.lastSaveDir != "" {
 			dlg.InitialDirPath = g.lastSaveDir
 		}

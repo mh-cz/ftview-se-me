@@ -38,9 +38,9 @@ const (
 // original C# type's single-threaded usage pattern; construct one per
 // conversion (or synchronize externally) if you need concurrency.
 type Converter struct {
-	// Warnings accumulates human-readable (Czech-language, matching the
-	// original tool's locale) notes about lossy or manual-follow-up-needed
-	// conversions from the most recent Convert call.
+	// Warnings accumulates human-readable notes about lossy or
+	// manual-follow-up-needed conversions from the most recent Convert
+	// call.
 	Warnings []string
 }
 
@@ -145,12 +145,12 @@ func (c *Converter) convert(xmlText string, direction Direction) string {
 
 	root, err := parseToTree(xmlText)
 	if err != nil {
-		c.Warnings = append(c.Warnings, fmt.Sprintf("Chyba XML: %s", err.Error()))
+		c.Warnings = append(c.Warnings, fmt.Sprintf("XML error: %s", err.Error()))
 		return ""
 	}
 
 	if root == nil {
-		c.Warnings = append(c.Warnings, "Chybí kořenový prvek <gfx>.")
+		c.Warnings = append(c.Warnings, "Missing root element <gfx>.")
 		return ""
 	}
 

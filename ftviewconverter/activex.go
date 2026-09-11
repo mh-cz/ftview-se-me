@@ -56,10 +56,10 @@ func (c *Converter) activeXCrossEdition(node *XNode, direction Direction) {
 		// Decoding failed (unexpected/corrupt blob shape) - fall through
 		// to the generic opaque-passthrough behavior below rather than
 		// silently dropping the object.
-		c.Warnings = append(c.Warnings, fmt.Sprintf("<activeX name=\"%s\"> (MultiState Indicator): binární data se nepodařilo dekódovat, zachován jako neproveden (opaque), ověřte manuálně.", name))
+		c.Warnings = append(c.Warnings, fmt.Sprintf("<activeX name=\"%s\"> (MultiState Indicator): failed to decode, kept opaque.", name))
 	}
 
-	c.Warnings = append(c.Warnings, fmt.Sprintf("<activeX name=\"%s\"> zachován, classId (%s) beze změny - pravděpodobně neregistrováno na cílové platformě, ověřte.", name, classID))
+	c.Warnings = append(c.Warnings, fmt.Sprintf("<activeX name=\"%s\"> classId %s unchanged - verify it's registered on target platform.", name, classID))
 
 	if direction == SeToMe {
 		stripSeOnlyCommonAttrs(node)
@@ -79,6 +79,6 @@ func (c *Converter) activeXCrossEdition(node *XNode, direction Direction) {
 // manually in the SE editor instead.
 func (c *Converter) multistateIndicatorMeToSe(node *XNode) {
 	name := node.GetAttr("name", "")
-	c.Warnings = append(c.Warnings, fmt.Sprintf("<multistateIndicator name=\"%s\"> SE binární formát (Multistate_Indicator.ocx) nelze znovu vygenerovat (neznámý kontrolní algoritmus), vytvořte prvek v SE editoru manuálně.", name))
+	c.Warnings = append(c.Warnings, fmt.Sprintf("<multistateIndicator name=\"%s\"> removed - SE binary format can't be regenerated, rebuild manually.", name))
 	markForRemoval(node)
 }

@@ -274,10 +274,10 @@ func (c *Converter) tryConvertMultistateIndicatorSeToMe(node *XNode) bool {
 		meConnectionsNode.Children = append(meConnectionsNode.Children, indicatorConnectionNode)
 		node.Children = append(node.Children, meConnectionsNode)
 	} else {
-		c.Warnings = append(c.Warnings, fmt.Sprintf("<multistateIndicator name=\"%s\">: SE connection \"IndicatorTag\" nenalezena nebo prázdná - ME connection \"Indicator\" nebyla vytvořena, doplňte tag ručně.", name))
+		c.Warnings = append(c.Warnings, fmt.Sprintf("<multistateIndicator name=\"%s\">: SE connection \"IndicatorTag\" missing/empty - \"Indicator\" not created, add tag manually.", name))
 	}
 
-	c.Warnings = append(c.Warnings, fmt.Sprintf("<multistateIndicator name=\"%s\">: hodnoty (barvy, písma, zarovnání, text stavů) byly dekódovány z binárního SE ActiveX formátu, který není oficiálně zdokumentovaný a byl rekonstruován zpětným inženýrstvím - i při úspěšném parsování proto vizuálně zkontrolujte výsledek v ME editoru.", name))
+	c.Warnings = append(c.Warnings, fmt.Sprintf("<multistateIndicator name=\"%s\">: values decoded from reverse-engineered binary format - verify visually in ME editor.", name))
 	return true
 }
 

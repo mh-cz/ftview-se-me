@@ -57,7 +57,7 @@ func (c *Converter) convertNodeMeToSe(node, parent *XNode) {
 			// as-is with only generic SE defaults added, since SE has no
 			// native object shaped like it - verify manually that the
 			// passthrough attributes are meaningful in SE.
-			c.Warnings = append(c.Warnings, fmt.Sprintf("<%s> nemá SE ekvivalent - prvek je ponechán beze změny struktury, zkontrolujte, zda dává v SE smysl.", node.Tag))
+			c.Warnings = append(c.Warnings, fmt.Sprintf("<%s> has no SE equivalent - kept unchanged, verify it makes sense in SE.", node.Tag))
 		}
 		addSeCommonDefaults(node)
 	}
@@ -143,7 +143,7 @@ func (c *Converter) numericInputCursorPointMeToSe(node *XNode, parent *XNode) {
 	node.SetAttr("keypadCustomCaption", "")
 	node.SetAttr("decimalPlaceType", "fixed")
 
-	c.Warnings = append(c.Warnings, fmt.Sprintf("<numericInputCursorPoint name=\"%s\"> -> <numericInput>. Klávesnicové/handshake atributy odebrány (bez SE ekvivalentu).", name))
+	c.Warnings = append(c.Warnings, fmt.Sprintf("<numericInputCursorPoint name=\"%s\"> -> <numericInput>: keypad/handshake attributes removed.", name))
 }
 
 // numericInputEnableMeToSe and stringInputEnableMeToSe handle ME
@@ -155,12 +155,12 @@ func (c *Converter) numericInputCursorPointMeToSe(node *XNode, parent *XNode) {
 // caption/image, which is a worse outcome than an honest drop, so both
 // are dropped with a warning rather than guessed at.
 func (c *Converter) numericInputEnableMeToSe(node *XNode) {
-	c.Warnings = append(c.Warnings, fmt.Sprintf("<numericInputEnable name=\"%s\"> odebrán (je to tlačítko, ne pole). Přidejte SE numericInput ručně podle potřeby.", node.GetAttr("name")))
+	c.Warnings = append(c.Warnings, fmt.Sprintf("<numericInputEnable name=\"%s\"> removed (button, not a field) - add SE numericInput manually.", node.GetAttr("name")))
 	markForRemoval(node)
 }
 
 func (c *Converter) stringInputEnableMeToSe(node *XNode) {
-	c.Warnings = append(c.Warnings, fmt.Sprintf("<stringInputEnable name=\"%s\"> odebrán (je to tlačítko, ne pole). Přidejte SE stringInput ručně podle potřeby.", node.GetAttr("name")))
+	c.Warnings = append(c.Warnings, fmt.Sprintf("<stringInputEnable name=\"%s\"> removed (button, not a field) - add SE stringInput manually.", node.GetAttr("name")))
 	markForRemoval(node)
 }
 
@@ -241,7 +241,7 @@ func (c *Converter) stringDisplayMeToSe(node *XNode) {
 	node.SetAttr("dimensionsWidth", formatInvariantInt(maxInt(1, int(widthPx/approxCharW))))
 	node.SetAttr("dimensionsHeight", formatInvariantInt(maxInt(1, int(heightPx/approxLineH))))
 	node.SetAttr("characterOffset", "0")
-	c.Warnings = append(c.Warnings, fmt.Sprintf("<stringDisplay name=\"%s\">: SE dimensionsWidth/dimensionsHeight (znaky) dopočítány z ME pixelové výšky/šířky a fontSize podle přibližné velikosti znaku - zkontrolujte, že se pole nezalamuje ani zbytečně nepřetéká.", node.GetAttr("name")))
+	c.Warnings = append(c.Warnings, fmt.Sprintf("<stringDisplay name=\"%s\">: dimensionsWidth/dimensionsHeight estimated from pixel size - check wrapping/overflow.", node.GetAttr("name")))
 
 	for _, a := range fieldDisplayVisualDropAttrs {
 		node.RemoveAttr(a)

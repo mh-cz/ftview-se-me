@@ -39,7 +39,7 @@ func describeRemovedVbaContent(node *XNode) string {
 	if len(hashes) == 0 {
 		return ""
 	}
-	return fmt.Sprintf(" Odebraný VBA obsahoval šifrovaná data (hash: %s) - jde o binární/šifrovaný stream, ne čitelný zdrojový kód, takže jej nelze zobrazit v textové podobě; hash slouží jen k dohledání položky v původním souboru.", strings.Join(hashes, ", "))
+	return fmt.Sprintf(" Encrypted VBA data removed (hash: %s).", strings.Join(hashes, ", "))
 }
 
 // describeRemovedExpression renders the tag expression(s) actually
@@ -68,13 +68,13 @@ func describeRemovedExpression(node *XNode) string {
 		return ""
 	}
 	if len(exprs) == 1 {
-		return fmt.Sprintf(" Odebraný výraz: %q.", exprs[0])
+		return fmt.Sprintf(" Removed expression: %q.", exprs[0])
 	}
 	quoted := make([]string, len(exprs))
 	for i, e := range exprs {
 		quoted[i] = fmt.Sprintf("%q", e)
 	}
-	return fmt.Sprintf(" Odebrané výrazy: %s.", strings.Join(quoted, ", "))
+	return fmt.Sprintf(" Removed expressions: %s.", strings.Join(quoted, ", "))
 }
 
 func (c *Converter) convertNodeSeToMe(node, parent *XNode) {
@@ -102,7 +102,7 @@ func (c *Converter) convertNodeSeToMe(node, parent *XNode) {
 			// for children). The node itself is kept; only its SE-only
 			// attributes get stripped, so the warning says so rather than
 			// implying removal.
-			c.Warnings = append(c.Warnings, fmt.Sprintf("<%s> nemá ME ekvivalent - prvek zůstává, ale jeho SE-specifické atributy budou odebrány.", node.Tag))
+			c.Warnings = append(c.Warnings, fmt.Sprintf("<%s> has no ME equivalent - kept, but SE-specific attributes removed.", node.Tag))
 		}
 		stripSeOnlyCommonAttrs(node)
 	}
@@ -110,7 +110,7 @@ func (c *Converter) convertNodeSeToMe(node, parent *XNode) {
 	kept := make([]*XNode, 0, len(node.Children))
 	for _, child := range node.Children {
 		if containsString(vbaOnlyChildTags, child.Tag) {
-			c.Warnings = append(c.Warnings, fmt.Sprintf("<%s> odebrán - VBA není v ME podporováno, ME nemá žádný ekvivalent pro embedded VBA projekty/kód/podpisy.%s", child.Tag, describeRemovedVbaContent(child)))
+			c.Warnings = append(c.Warnings, fmt.Sprintf("<%s> removed - VBA not supported in ME.%s", child.Tag, describeRemovedVbaContent(child)))
 			continue
 		}
 
@@ -134,7 +134,7 @@ func (c *Converter) convertNodeSeToMe(node, parent *XNode) {
 		// recurse into their children and silently pass properties that
 		// don't exist in ME's schema.
 		if _, ok := seNoDirectMeEquivalentTags[child.Tag]; ok {
-			c.Warnings = append(c.Warnings, fmt.Sprintf("<%s name=\"%s\"> odebrán i s obsahem - ME nemá tento typ prvku vůbec (žádný ME tag/objekt mu neodpovídá), nelze jej tedy jen převést.%s", child.Tag, child.GetAttr("name", ""), describeRemovedExpression(child)))
+			c.Warnings = append(c.Warnings, fmt.Sprintf("<%s name=\"%s\"> removed with its contents - no ME equivalent exists.%s", child.Tag, child.GetAttr("name", ""), describeRemovedExpression(child)))
 			continue
 		}
 
@@ -171,7 +171,7 @@ func (c *Converter) convertButtonSeToMe(node, parent *XNode) bool {
 	// no faithful ME equivalent for the button regardless of what press/
 	// release do.
 	if trimSpace(repeatAction) != "" {
-		c.Warnings = append(c.Warnings, fmt.Sprintf("tlačítko \"%s\" odebráno (repeatAction bez ME ekvivalentu).", name))
+		c.Warnings = append(c.Warnings, fmt.Sprintf("button \"%s\" removed - repeatAction has no ME equivalent.", name))
 		return false
 	}
 
@@ -238,7 +238,7 @@ func (c *Converter) convertButtonSeToMe(node, parent *XNode) bool {
 		rebuildAsMacroButton(node, name, upState, setCommands, parent, c)
 		if len(otherCommands) > 0 {
 			c.Warnings = append(c.Warnings, fmt.Sprintf(
-				"tlačítko \"%s\": kromě zápisu do tagu obsahovalo i příkaz(y) %s - ME macroButton spustí jen zápis do tagu, ostatní příkazy doplňte ručně (např. samostatné <logoutButton>/navigační tlačítko).",
+				"button \"%s\": also had command(s) %s, dropped (macroButton only runs the tag write) - add manually.",
 				name, strings.Join(otherCommands, "; ")))
 		}
 		return true
@@ -250,7 +250,7 @@ func (c *Converter) convertButtonSeToMe(node, parent *XNode) bool {
 	// reason this button couldn't be converted, and it's exactly the
 	// information a human needs to rebuild it by hand.
 	c.Warnings = append(c.Warnings, fmt.Sprintf(
-		"tlačítko \"%s\" odebráno - příkaz(y) nerozpoznány jako navigace/přihlášení/odhlášení ani zápis do tagu (pressAction=%q, releaseAction=%q), sestavte ekvivalent v ME ručně.",
+		"button \"%s\" removed - unrecognized command(s) (pressAction=%q, releaseAction=%q), rebuild in ME manually.",
 		name, pressAction, releaseAction))
 	return false
 }
@@ -753,7 +753,7 @@ func rebuildAsMacroButton(node *XNode, name string, upState *XNode, setCommands 
 	node.Children = append(node.Children, imageSettings)
 
 	c.Warnings = append(c.Warnings, fmt.Sprintf(
-		"tlačítko \"%s\" -> <macroButton macro=\"%s\">. ME nemá přímý ekvivalent pro zápis hodnoty do tagu (ani přepnutí boolean tagu) z tlačítka - vytvořte makro \"%s\" v ME projektu, které provede: %s.",
+		"button \"%s\" -> <macroButton macro=\"%s\">. Create ME macro \"%s\" that does: %s.",
 		name, macroName, macroName, setCommandsDescription(setCommands)))
 }
 
@@ -1257,7 +1257,7 @@ func (c *Converter) displaySettingsSeToMe(node *XNode) {
 	if displayType == "overlay" {
 		displayType = "onTop"
 		node.SetAttr("displayType", "onTop")
-		c.Warnings = append(c.Warnings, "displaySettings displayType \"overlay\" přemapován na ME \"onTop\" - nejbližší ME ekvivalent chování overlay displeje, ověřte vizuálně.")
+		c.Warnings = append(c.Warnings, "displayType \"overlay\" remapped to ME \"onTop\" - verify visually.")
 	}
 
 	position := node.GetAttr("position", "useCurrentPosition")
@@ -1334,7 +1334,7 @@ func (c *Converter) numericDisplaySeToMe(node *XNode) {
 		}
 		node.RemoveAttr("charWidth")
 		node.RemoveAttr("charHeight")
-		c.Warnings = append(c.Warnings, fmt.Sprintf("<numericDisplay name=\"%s\">: fontSize dopočítán z SE charWidth/charHeight (ME nemá tyto atributy, používá přímo fontSize) - zkontrolujte skutečnou velikost písma.", node.GetAttr("name")))
+		c.Warnings = append(c.Warnings, fmt.Sprintf("<numericDisplay name=\"%s\">: fontSize computed from SE charWidth/charHeight - check actual size.", node.GetAttr("name")))
 	}
 
 	if !node.Has("borderColor") {
@@ -1467,7 +1467,7 @@ func (c *Converter) numericInputSeToMe(node *XNode, parent *XNode) {
 	node.SetAttr("VariableDomainName", "")
 	node.SetAttr("ESDomainNameDisable", "false")
 
-	c.Warnings = append(c.Warnings, fmt.Sprintf("<numericInput name=\"%s\"> -> <numericInputCursorPoint>. min/max nastaveny na 0/9999, upravte ručně.", name))
+	c.Warnings = append(c.Warnings, fmt.Sprintf("<numericInput name=\"%s\"> -> <numericInputCursorPoint>: min/max set to 0/9999, adjust manually.", name))
 }
 
 // stringInputSeToMe rebuilds SE <stringInput> (a plain rectangular
@@ -1588,5 +1588,5 @@ func (c *Converter) stringInputSeToMe(node *XNode, parent *XNode) {
 	imageSettings.SetAttr("blink", "false")
 	node.Children = append(node.Children, imageSettings)
 
-	c.Warnings = append(c.Warnings, fmt.Sprintf("<stringInput name=\"%s\"> -> <stringInputEnable>. Jde o tlačítko s klávesnicí, ne inline pole - popisek je prázdný, chování na obrazovce se změní, zkontrolujte ručně.", name))
+	c.Warnings = append(c.Warnings, fmt.Sprintf("<stringInput name=\"%s\"> -> <stringInputEnable>: now a keypad-popup button, not inline - verify manually.", name))
 }
